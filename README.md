@@ -1155,6 +1155,14 @@ For JIRA, add in the Client Jira Authenticator:
 <!-- CAS:END -->
 ```
 
+JIRA versions from 7 on implement a different API, therefore you need to use:
+
+```xml
+<!-- CAS:START - Java Client Jira 7 Authenticator -->
+<authenticator class="org.jasig.cas.client.integration.atlassian.Jira7CasAuthenticator"/>
+<!-- CAS:END -->
+```
+
 For Confluence, add in the Client Confluence Authenticator:
 
 ```xml
