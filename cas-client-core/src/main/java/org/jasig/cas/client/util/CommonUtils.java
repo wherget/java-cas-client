@@ -20,10 +20,11 @@ package org.jasig.cas.client.util;
 
 import java.io.*;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.*;
+
+import javax.net.ssl.SSLException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -256,17 +257,7 @@ public final class CommonUtils {
 
         return serverNames[0];
     }
-
-    private static boolean serverNameContainsPort(final boolean containsScheme, final String serverName) {
-        if (!containsScheme && serverName.contains(":")) {
-            return true;
-        }
-
-        final int schemeIndex = serverName.indexOf(":");
-        final int portIndex = serverName.lastIndexOf(":");
-        return schemeIndex != portIndex;
-    }
-
+    
     private static boolean requestIsOnStandardPort(final HttpServletRequest request) {
         final int serverPort = request.getServerPort();
         return serverPort == 80 || serverPort == 443;
@@ -324,29 +315,36 @@ public final class CommonUtils {
         originalRequestUrl.setParameters(request.getQueryString());
 
         final URIBuilder builder;
-
-        boolean containsScheme = true;
         if (!serverName.startsWith("https://") && !serverName.startsWith("http://")) {
-            builder = new URIBuilder(encode);
-            builder.setScheme(request.isSecure() ? "https" : "http");
-            builder.setHost(serverName);
-            containsScheme = false;
-        }  else {
+            String scheme = request.isSecure() ? "https://" : "http://";
+            builder = new URIBuilder(scheme + serverName, encode);
+        } else {
             builder = new URIBuilder(serverName, encode);
         }
 
-
-        if (!serverNameContainsPort(containsScheme, serverName) && !requestIsOnStandardPort(request)) {
+        if (builder.getPort() == -1 && !requestIsOnStandardPort(request)) {
             builder.setPort(request.getServerPort());
         }
 
-        builder.setEncodedPath(request.getRequestURI());
+        builder.setEncodedPath(builder.getEncodedPath() + request.getRequestURI());
 
         final List<String> serviceParameterNames = Arrays.asList(serviceParameterName.split(","));
         if (!serviceParameterNames.isEmpty() && !originalRequestUrl.getQueryParams().isEmpty()) {
             for (final URIBuilder.BasicNameValuePair pair : originalRequestUrl.getQueryParams()) {
-                if (!pair.getName().equals(artifactParameterName) && !serviceParameterNames.contains(pair.getName())) {
-                    builder.addParameter(pair.getName(), pair.getValue());
+                String name = pair.getName();
+                if (!name.equals(artifactParameterName) && !serviceParameterNames.contains(name)) {
+                    if (name.contains("&") || name.contains("=") ){
+                        URIBuilder encodedParamBuilder = new URIBuilder();
+                        encodedParamBuilder.setParameters(name);
+                        for (final URIBuilder.BasicNameValuePair pair2 :encodedParamBuilder.getQueryParams()){
+                            String name2 = pair2.getName();
+                            if (!name2.equals(artifactParameterName) && !serviceParameterNames.contains(name2)) {
+                                builder.addParameter(name2, pair2.getValue());
+                            }
+                        }
+                    } else {
+                        builder.addParameter(name, pair.getValue());
+                    }
                 }
             }
         }
@@ -397,11 +395,11 @@ public final class CommonUtils {
      */
     @Deprecated
     public static String getResponseFromServer(final String constructedUrl, final String encoding) {
-        try {
+    	try {
             return getResponseFromServer(new URL(constructedUrl), DEFAULT_URL_CONNECTION_FACTORY, encoding);
-        } catch (final Exception e) {
-            throw new RuntimeException(e);
-        }
+        } catch (final IOException e) {
+            throw new RuntimeException(e.getMessage(), e);
+        }  
     }
 
     @Deprecated
@@ -419,7 +417,7 @@ public final class CommonUtils {
      */
     public static String getResponseFromServer(final URL constructedUrl, final HttpURLConnectionFactory factory,
             final String encoding) {
-
+    	
         HttpURLConnection conn = null;
         InputStreamReader in = null;
         try {
@@ -438,8 +436,14 @@ public final class CommonUtils {
             }
 
             return builder.toString();
-        } catch (final Exception e) {
-            LOGGER.error(e.getMessage(), e);
+        } catch (final RuntimeException e) {
+        	throw e;
+        } catch (final SSLException e) {
+            LOGGER.error("SSL error getting response from host: {} : Error Message: {}", constructedUrl.getHost(), e.getMessage(), e);
+            throw new RuntimeException(e);
+        } catch (final IOException e) {
+            LOGGER.error("Error getting response from host: [{}] with path: [{}] and protocol: [{}] Error Message: {}",
+            		constructedUrl.getHost(), constructedUrl.getPath(), constructedUrl.getProtocol(), e.getMessage(), e);
             throw new RuntimeException(e);
         } finally {
             closeQuietly(in);
@@ -468,7 +472,7 @@ public final class CommonUtils {
     public static void sendRedirect(final HttpServletResponse response, final String url) {
         try {
             response.sendRedirect(url);
-        } catch (final Exception e) {
+        } catch (final IOException e) {
             LOGGER.warn(e.getMessage(), e);
         }
 
@@ -698,5 +702,26 @@ public final class CommonUtils {
         } catch (final NumberFormatException nfe) {
             return defaultValue;
         }
+    }
+
+    /**
+     * Returns the string as-is, unless it's <code>null</code>;
+     * in this case an empty string is returned.
+     *
+     * @param string a possibly <code>null</code> string
+     * @return a non-<code>null</code> string
+     */
+    public static String nullToEmpty(String string) {
+        return string == null ? "" : string;
+    }
+
+    /**
+     * Adds a trailing slash to the given uri, if it doesn't already have one.
+     *
+     * @param uri a string that may or may not end with a slash
+     * @return the same string, except with a slash suffix (if necessary).
+     */
+    public static String addTrailingSlash(String uri) {
+        return uri.endsWith("/") ? uri : uri + "/";
     }
 }

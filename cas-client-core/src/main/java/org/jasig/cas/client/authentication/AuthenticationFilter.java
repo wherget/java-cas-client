@@ -93,7 +93,14 @@ public class AuthenticationFilter extends AbstractCasFilter {
     protected void initInternal(final FilterConfig filterConfig) throws ServletException {
         if (!isIgnoreInitConfiguration()) {
             super.initInternal(filterConfig);
-            setCasServerLoginUrl(getString(ConfigurationKeys.CAS_SERVER_LOGIN_URL));
+
+            String loginUrl = getString(ConfigurationKeys.CAS_SERVER_LOGIN_URL);
+            if (loginUrl != null) {
+                setCasServerLoginUrl(loginUrl);
+            } else {
+                setCasServerUrlPrefix(getString(ConfigurationKeys.CAS_SERVER_URL_PREFIX));
+            }
+
             setRenew(getBoolean(ConfigurationKeys.RENEW));
             setGateway(getBoolean(ConfigurationKeys.GATEWAY));
                        
@@ -133,7 +140,13 @@ public class AuthenticationFilter extends AbstractCasFilter {
 
     public void init() {
         super.init();
-        CommonUtils.assertNotNull(this.casServerLoginUrl, "casServerLoginUrl cannot be null.");
+
+        String message = String.format(
+            "one of %s and %s must not be null.",
+            ConfigurationKeys.CAS_SERVER_LOGIN_URL.getName(),
+            ConfigurationKeys.CAS_SERVER_URL_PREFIX.getName());
+
+        CommonUtils.assertNotNull(this.casServerLoginUrl, message);
     }
 
     public final void doFilter(final ServletRequest servletRequest, final ServletResponse servletResponse,
@@ -192,6 +205,10 @@ public class AuthenticationFilter extends AbstractCasFilter {
         this.gateway = gateway;
     }
 
+    public final void setCasServerUrlPrefix(final String casServerUrlPrefix) {
+        setCasServerLoginUrl(CommonUtils.addTrailingSlash(casServerUrlPrefix) + "login");
+    }
+
     public final void setCasServerLoginUrl(final String casServerLoginUrl) {
         this.casServerLoginUrl = casServerLoginUrl;
     }
@@ -212,4 +229,10 @@ public class AuthenticationFilter extends AbstractCasFilter {
         final String requestUri = urlBuffer.toString();
         return this.ignoreUrlPatternMatcherStrategyClass.matches(requestUri);
     }
+
+    public final void setIgnoreUrlPatternMatcherStrategyClass(
+            final UrlPatternMatcherStrategy ignoreUrlPatternMatcherStrategyClass) {
+        this.ignoreUrlPatternMatcherStrategyClass = ignoreUrlPatternMatcherStrategyClass;
+    }
+
 }
